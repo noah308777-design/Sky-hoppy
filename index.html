@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>Sky Hopper</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#87ceeb;font-family:Arial,sans-serif;touch-action:none}
+body{display:flex;align-items:center;justify-content:center}
+#game{position:relative;width:min(100vw,480px);height:100vh;max-height:900px;overflow:hidden;background:linear-gradient(#78d4ff 0%,#d5f5ff 72%,#78c850 72%,#58a53d 100%)}
+canvas{width:100%;height:100%;display:block}
+#hud{position:absolute;top:18px;left:0;right:0;text-align:center;color:white;font-size:44px;font-weight:900;text-shadow:3px 3px 0 #34708a;pointer-events:none}
+#message{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;color:#fff;text-shadow:2px 2px 0 #32657b;pointer-events:none}
+#message h1{font-size:46px;margin:0 0 8px}#message p{font-size:18px;margin:5px}
+#start{pointer-events:auto;border:0;border-radius:999px;padding:13px 28px;margin-top:18px;background:#ffcc42;color:#503d00;font-weight:900;font-size:18px;box-shadow:0 5px 0 #c99721;cursor:pointer}
+.small{font-size:13px!important;opacity:.9}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div id="game">
+<canvas id="c"></canvas>
+<div id="hud">0</div>
+<div id="message">
+<h1>Sky Hopper</h1>
+<p>Tap, click, or press SPACE to fly!</p>
+<button id="start">START GAME</button>
+<p class="small">Avoid the gates and beat your high score.</p>
+</div>
+</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+const hud=document.getElementById('hud'),msg=document.getElementById('message'),start=document.getElementById('start');
+let W,H,dpr,player,pipes,score,best=Number(localStorage.skyHopperBest||0),running=false,last=0,spawnTimer=0;
+
+function resize(){dpr=Math.min(devicePixelRatio||1,2);W=canvas.clientWidth;H=canvas.clientHeight;canvas.width=W*dpr;canvas.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize); resize();
+
+function reset(){
+ player={x:W*.27,y:H*.45,r:16,vy:0,rot:0};
+ pipes=[];score=0;spawnTimer=0;hud.textContent=0;
+}
+function flap(){if(!running)return;player.vy=-H*.42}
+function startGame(){reset();running=true;msg.classList.add('hidden');last=performance.now();requestAnimationFrame(loop);flap()}
+start.onclick=startGame;
+addEventListener('pointerdown',e=>{if(e.target!==start)flap()});
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault(); if(!running)startGame(); else flap()}});
+function addPipe(){
+ let gap=Math.max(145,H*.23), min=70,max=H-70-gap;
+ let top=min+Math.random()*(max-min);
+ pipes.push({x:W+35,w:58,top,gap,passed:false});
+}
+function gameOver(){
+ running=false;best=Math.max(best,score);localStorage.skyHopperBest=best;
+ msg.innerHTML=`<h1>Game Over</h1><p>Score: ${score} &nbsp; Best: ${best}</p><button id="start">PLAY AGAIN</button><p class="small">Tap or press SPACE to try again.</p>`;
+ msg.classList.remove('hidden');document.getElementById('start').onclick=startGame;
+}
+function circleRect(cx,cy,r,rx,ry,rw,rh){let x=Math.max(rx,Math.min(cx,rx+rw)),y=Math.max(ry,Math.min(cy,ry+rh));return (cx-x)**2+(cy-y)**2<r*r}
+function update(dt){
+ player.vy+=H*1.12*dt;player.y+=player.vy*dt;player.rot=Math.max(-.5,Math.min(1.2,player.vy/(H*.55)));
+ spawnTimer+=dt;if(spawnTimer>.94){spawnTimer=0;addPipe()}
+ let speed=W*.42;
+ for(const p of pipes){
+  p.x-=speed*dt;
+  if(!p.passed&&p.x+p.w<player.x){p.passed=true;score++;hud.textContent=score}
+  if(circleRect(player.x,player.y,player.r,p.x,0,p.w,p.top)||circleRect(player.x,player.y,player.r,p.x,p.top+p.gap,p.w,H-(p.top+p.gap)))gameOver();
+ }
+ pipes=pipes.filter(p=>p.x+p.w>-20);
+ if(player.y-player.r<0||player.y+player.r>H*.92)gameOver();
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ // clouds
+ ctx.fillStyle='rgba(255,255,255,.7)';
+ for(let i=0;i<4;i++){let x=(i*173-(performance.now()/50)%173),y=75+i%2*90;ctx.beginPath();ctx.arc(x,y,25,0,7);ctx.arc(x+25,y-10,32,0,7);ctx.arc(x+55,y,23,0,7);ctx.fill()}
+ // ground
+ ctx.fillStyle='#58a53d';ctx.fillRect(0,H*.92,W,H*.08);
+ ctx.fillStyle='#6fbe4b';ctx.fillRect(0,H*.92,W,6);
+ // pipes
+ for(const p of pipes){
+  ctx.fillStyle='#4ebc68';ctx.fillRect(p.x,0,p.w,p.top);ctx.fillRect(p.x,p.top+p.gap,p.w,H-(p.top+p.gap));
+  ctx.fillStyle='#319653';ctx.fillRect(p.x,p.top-6,p.w,6);ctx.fillRect(p.x,p.top+p.gap,p.w,6);
+  ctx.fillStyle='#76d88a';ctx.fillRect(p.x+8,0,8,p.top-10);ctx.fillRect(p.x+8,p.top+p.gap+10,8,H-(p.top+p.gap+10));
+ }
+ // player
+ ctx.save();ctx.translate(player.x,player.y);ctx.rotate(player.rot);
+ ctx.fillStyle='#ffb83e';ctx.beginPath();ctx.arc(0,0,player.r,0,7);ctx.fill();
+ ctx.fillStyle='#f28b2d';ctx.beginPath();ctx.ellipse(-5,5,11,6,0,0,7);ctx.fill();
+ ctx.fillStyle='white';ctx.beginPath();ctx.arc(7,-7,7,0,7);ctx.fill();ctx.fillStyle='#222';ctx.beginPath();ctx.arc(9,-7,3,0,7);ctx.fill();
+ ctx.fillStyle='#ff7c2e';ctx.beginPath();ctx.moveTo(14,-1);ctx.lineTo(27,4);ctx.lineTo(14,7);ctx.fill();
+ ctx.restore();
+}
+function loop(t){if(!running){draw();return}let dt=Math.min((t-last)/1000,.033);last=t;update(dt);draw();if(running)requestAnimationFrame(loop)}
+reset();draw();
+</script>
+</body>
+</html>
